@@ -7,16 +7,39 @@ from bs4 import BeautifulSoup
 import json
 
 import sys
+
+
 default_encoding = 'utf-8'
 if sys.getdefaultencoding() != default_encoding:
     reload(sys)
     sys.setdefaultencoding(default_encoding)
 
 #search_list = ["左传", "吕氏春秋", "列子", "孙子兵法", "墨子", "淮南子", "庄子", "韩非子", "老子", "史通", "战国策", "史记", "山海经", "大学", "中庸", "孟子", "论语", "孝经", "礼记", "周礼", "诗经", "周易", "金刚经", "心经", "维摩诘经", "六祖坛经", "楞严经", "法华经", "华严经", "了凡四训"]
-search_list = ["墨子", "淮南子", "庄子", "韩非子", "老子", "史通", "战国策", "史记", "山海经", "大学", "中庸", "孟子", "论语", "孝经", "礼记", "周礼", "诗经", "周易", "金刚经", "心经", "维摩诘经", "六祖坛经", "楞严经", "法华经", "华严经", "了凡四训"]
+search_list = ["大学", "中庸", "孟子", "论语", "孝经", "礼记", "周礼", "诗经", "周易", "金刚经", "心经", "维摩诘经", "六祖坛经", "楞严经", "法华经", "华严经", "了凡四训"]
+
+
 
 base_url = "https://so.gushiwen.org"
 
+
+#抓取的每本书的数据存储格式(json)
+# {
+#     "bookname": "xx",
+#     "chapters": [
+#         {
+#             "chaptername": "xx",
+#             "chaptercontent": [
+#                 {"title": "xx", "text": "xx"},
+#                 ......
+#             ]
+#         },
+#         ......
+#     ]
+# }
+
+def myprint(str):
+    if str:
+        print (str.decode("utf-8"))
 
 try:
     # #前半部分的链接(注意是http，不是https)
@@ -40,7 +63,9 @@ try:
         search_html = search_response.read()
         search_soup = BeautifulSoup(search_html, 'html.parser')
 
-        book_jsonlist = []
+        book_json = {}
+        book_json["bookname"] = book
+        book_json["chapters"] = []
 
         #得到书的链接
         book_url = ""
@@ -49,13 +74,15 @@ try:
             break
 
         if not book_url:
-            print ("search failed! " + book)
+            myprint ("搜索失败：" + book)
+            with open('D:\spider\\failed.log', 'w+') as f:
+                f.write(book+'\n')
             continue
 
         book_url = base_url + book_url
 
-        #print ("搜索成功: " + book)
-        print ("链接: " + book_url)
+        myprint ("搜索成功: " + book)
+        myprint ("链接: " + book_url)
         #打开书的链接
         book_response = urllib2.urlopen(book_url)
         book_html = book_response.read()
@@ -65,53 +92,78 @@ try:
         #每本书分两级结构，大章节和小章节
         #大章节
         for data in book_soup.select('.bookcont'):
-            chapter_list = []
+            
+            chapter_json = {}
+            chapter_json["chaptername"] = ""
+            chapter_json["chaptercontent"] = []
 
             for chapter in data.select('.bookMl'):
-                #print (chapter.string)
-                chapter_list.append(chapter.string)
+                #myprint (chapter.string)
+                #chapters_json.append(chapter.string)
+                chapter_json["chaptername"] = chapter.string
                 break
 
-            
-            
-            chapter_content = []
+            myprint("抓取章节："+ chapter_json["chaptername"])
+
             for span in data.select('span'):
+                #在一个chapter下，遍历每个小节的内容
+
+                #print (span.attrs)
+                #print type(span.attrs)
                 title = span.string
-                print (title)
+                myprint (title)
                 link = span.a.get('href')
-                print (link)
+                myprint (link)
                 
                 #如果该章节没有链接（古籍中该章缺失），则跳过后续处理。
                 if not link:
-                    title_list = [title, ""]
-                    chapter_content.append(title_list)
+                    #title_list = [title, ""]
+                    #chapter_json["chaptercontent"].append([title, ""])
+                    chapter_json["chaptercontent"].append({"title": title, "text":""})
                     continue
                 
                 text_response = urllib2.urlopen(link)
                 text_html = text_response.read()
                 text_soup = BeautifulSoup(text_html, 'html.parser')
 
-                #print (text_html)
+                #myprint (text_html)
                 for text in text_soup.select('.contson'):
-                    #print (text.get_text())
-                    title_list = [title, text.get_text()]
-                    chapter_content.append(title_list)
+                    #myprint (text.get_text())
+                    #title_list = [title, text.get_text()]
+                    #chapter_json["chaptercontent"].append([title, text.get_text()])
+                    #print (text.attrs)
+                    #print type(text.attrs)
+                    #myprint(text)
+                    #print text
+                    paragraphs = ""
+                    for p in text:
+                        if p.string:
+                            paragraphs = paragraphs + "<p>" + p.string + "</p>"
+
+                    chapter_json["chaptercontent"].append({"title": title, "text":paragraphs})
                     break
                 #测试目的
                 #break
-            chapter_list.append(chapter_content)
-            book_jsonlist.append(chapter_list)
 
-        jsondata = json.dumps(book_jsonlist, ensure_ascii=False, indent=4)
+            #上面遍历抓取了一个chapter的内容，把它存入到book json中，下一次循环继续抓取下一个chapter
+            book_json["chapters"].append(chapter_json)
+            #测试目的
+            #break
+
+        jsondata = json.dumps(book_json, ensure_ascii=False, indent=4)
 
 
         filename = book+'.txt'
-        #将json保存到文件
+        #抓完了一本书的内容，保存到文件中
         with open('D:\spider\\'+filename.decode("utf-8"), 'w') as f:
             f.write(jsondata)
-        print ("saving file: " + filename.decode("utf-8") + "\n")
+        myprint ("saving file: " + filename.decode("utf-8") + "\n")
+
+        #测试目的
+        #break
+
 except Exception,e:
     print "Exception: %s" % str(e)
     traceback.print_exc()
-#print (html)
+#myprint (html)
 
